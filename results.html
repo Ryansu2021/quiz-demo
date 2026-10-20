@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全班成績</title>
+<style>
+  /* ===== 顏色：和學生端一致 ===== */
+  :root { --bg: #f2f7ff; --card: #ffffff; --ink: #1d2b45; --muted: #66748f; --main: #2f6fec; --ok: #1fa971; --no: #e5484d; --line: #dde6f3; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink); padding: 20px 16px;
+         font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.8rem; }
+  .status { color: var(--muted); font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+  .status.err .dot { background: var(--no); }
+  button { font: inherit; font-weight: 900; border: 0; border-radius: 12px; padding: 10px 16px; background: var(--main); color: #fff; cursor: pointer; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi { background: var(--card); border-radius: 18px; padding: 16px 18px; box-shadow: 0 6px 18px rgba(29,43,69,.08); }
+  .kpi small { color: var(--muted); font-weight: 700; } .kpi b { display: block; font-size: 2.6rem; line-height: 1.1; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+  .card { background: var(--card); border-radius: 18px; padding: 18px; box-shadow: 0 6px 18px rgba(29,43,69,.08); min-width: 0; }
+  .card h2 { margin: 0 0 12px; font-size: 1.15rem; }
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar { display: grid; grid-template-columns: 80px 1fr 56px; gap: 10px; align-items: center; font-weight: 700; }
+  .track { height: 26px; background: var(--line); border-radius: 8px; overflow: hidden; }
+  .fill { height: 100%; background: var(--main); border-radius: 8px; transition: width .4s; }
+  .fill.low { background: var(--no); }
+  table { width: 100%; border-collapse: collapse; font-size: 1.05rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: .9rem; }
+  td.num { font-variant-numeric: tabular-nums; font-weight: 900; }
+  .tbl { max-height: 420px; overflow: auto; }
+  .empty { color: var(--muted); font-weight: 700; padding: 20px 0; text-align: center; }
+  @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📊 全班成績</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="status-text">讀取中…</span></div>
+    <button id="btn-refresh">立即更新</button>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi"><small>已交卷</small><b id="k-count">–</b></div>
+    <div class="kpi"><small>平均分數</small><b id="k-avg">–</b></div>
+    <div class="kpi"><small>最高分</small><b id="k-max">–</b></div>
+    <div class="kpi"><small>需要關心（60 分以下）</small><b id="k-low">–</b></div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>分數分布</h2><div class="bars" id="bars"></div></div>
+    <div class="card"><h2>每位學生（依座號）</h2><div class="tbl" id="table"></div></div>
+  </section>
+</div>
+
+<script>
+// ===== 貼上和學生網頁同一個 Apps Script 網址 =====
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbx7tva1sA1bX48Ee_PtPti2zXAWZcBGKPtLZ1eyXISWwGFGedbehzBZqIDB76ebNW7wsA/exec";
+const REFRESH_SECONDS = 10;   // 每幾秒自動更新
+
+const $ = (id) => document.getElementById(id);
+const BANDS = [['100 分', s => s === 100], ['80–99', s => s >= 80 && s < 100], ['60–79', s => s >= 60 && s < 80], ['60 以下', s => s < 60]];
+
+async function load() {
+  try {
+    const res = await fetch(SHEET_URL);
+    const data = await res.json();
+    render(data.list || []);
+    $('status').classList.remove('err');
+    $('status-text').textContent = '已更新 ' + new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  } catch (e) {
+    $('status').classList.add('err');
+    $('status-text').textContent = '讀取失敗，請檢查網址';
+  }
+}
+
+function render(list) {
+  // 同一個座號交了很多次，只算最後一次
+  const latest = {};
+  list.forEach(r => { if (r.seat !== '') latest[r.seat] = r; });
+  const rows = Object.values(latest).sort((a, b) => a.seat - b.seat);
+  const scores = rows.map(r => Number(r.score));
+
+  $('k-count').textContent = rows.length;
+  $('k-avg').textContent = rows.length ? Math.round(scores.reduce((a, b) => a + b, 0) / rows.length) : '–';
+  $('k-max').textContent = rows.length ? Math.max(...scores) : '–';
+  $('k-low').textContent = scores.filter(s => s < 60).length;
+
+  const max = Math.max(1, ...BANDS.map(([, f]) => scores.filter(f).length));
+  $('bars').innerHTML = BANDS.map(([name, f], i) => {
+    const n = scores.filter(f).length;
+    return `<div class="bar"><span>${name}</span><div class="track"><div class="fill ${i === 3 ? 'low' : ''}" style="width:${n / max * 100}%"></div></div><span>${n} 人</span></div>`;
+  }).join('');
+
+  $('table').innerHTML = rows.length
+    ? `<table><thead><tr><th>座號</th><th>分數</th><th>答對</th><th>交卷時間</th></tr></thead><tbody>${rows.map(r =>
+        `<tr><td class="num">${r.seat}</td><td class="num" style="color:${r.score < 60 ? 'var(--no)' : 'inherit'}">${r.score}</td><td>${r.correct} / ${r.total}</td><td>${r.time}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">還沒有學生交卷</div>';
+}
+
+$('btn-refresh').onclick = load;
+load();
+setInterval(load, REFRESH_SECONDS * 1000);
+</script>
+</body>
+</html>
