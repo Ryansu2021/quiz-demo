@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>課堂小測驗</title>
+<style>
+  /* ===== 顏色與字體：想換顏色，改這裡就好 ===== */
+  :root {
+    --bg: #f2f7ff;      /* 背景 */
+    --card: #ffffff;    /* 卡片 */
+    --ink: #1d2b45;     /* 文字 */
+    --main: #2f6fec;    /* 主色 */
+    --ok: #1fa971;      /* 答對 */
+    --no: #e5484d;      /* 答錯 */
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+         font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+         display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .card { background: var(--card); width: 100%; max-width: 560px; border-radius: 20px;
+          box-shadow: 0 8px 24px rgba(29,43,69,.12); padding: 24px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  .sub { color: #66748f; margin: 0 0 18px; font-weight: 700; }
+  label { display: block; font-weight: 700; margin: 10px 0 4px; }
+  input { width: 100%; font-size: 1.2rem; padding: 12px; border: 2px solid #c9d5ea; border-radius: 12px; }
+  button { width: 100%; font-size: 1.2rem; font-weight: 900; padding: 14px; border: 0; border-radius: 14px;
+           background: var(--main); color: #fff; margin-top: 14px; cursor: pointer; touch-action: manipulation; }
+  .bar { height: 10px; background: #e3eaf6; border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+  .bar i { display: block; height: 100%; background: var(--main); width: 0; transition: width .3s; }
+  .q { font-size: 1.6rem; font-weight: 900; margin: 6px 0 14px; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opts button { background: #eef3fc; color: var(--ink); margin: 0; font-size: 1.3rem; border: 2px solid #c9d5ea; }
+  .opts button.right { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .opts button.wrong { background: var(--no); color: #fff; border-color: var(--no); }
+  .big { font-size: 3rem; font-weight: 900; text-align: center; margin: 10px 0; }
+  .note { text-align: center; color: #66748f; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- 畫面一：輸入座號 -->
+  <section id="page-login">
+    <h1>📝 課堂小測驗</h1>
+    <p class="sub">共 5 題，作答完會自動送出成績</p>
+    <label for="seat">你的座號</label>
+    <input id="seat" type="number" inputmode="numeric" placeholder="例如 7">
+    <button id="btn-start">開始作答</button>
+  </section>
+
+  <!-- 畫面二：作答 -->
+  <section id="page-quiz" hidden>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="sub" id="progress">第 1 / 5 題</div>
+    <div class="q" id="question"></div>
+    <div class="opts" id="options"></div>
+  </section>
+
+  <!-- 畫面三：成績 -->
+  <section id="page-result" hidden>
+    <h1>🎉 完成！</h1>
+    <div class="big" id="score"></div>
+    <p class="note" id="send-status">成績傳送中…</p>
+  </section>
+
+</div>
+
+<script>
+// ===== 第 3 章會用到：把 Apps Script 的網址貼在引號裡（還沒設定就先留空白） =====
+const SHEET_URL = "";
+
+// ===== 題目：想換題目，改這裡就好（answer 填正確選項的位置，從 0 開始數） =====
+const QUESTIONS = [
+  { q: "下列哪一個是質數？", options: ["9", "15", "13", "21"], answer: 2 },
+  { q: "12 的質因數有哪些？", options: ["2、3", "2、6", "3、4", "1、12"], answer: 0 },
+  { q: "2 × 2 × 3 寫成標準分解式是？", options: ["2 × 3", "2² × 3", "4 × 3", "2 × 3²"], answer: 1 },
+  { q: "下列哪一個不是質數？", options: ["2", "29", "51", "31"], answer: 2 },
+  { q: "30 有幾個不同的質因數？", options: ["2 個", "3 個", "4 個", "5 個"], answer: 1 }
+];
+
+let seat = "", index = 0, correct = 0;
+const $ = (id) => document.getElementById(id);
+
+$("btn-start").onclick = () => {
+  seat = $("seat").value.trim();
+  if (!seat) { $("seat").focus(); return; }
+  $("page-login").hidden = true;
+  $("page-quiz").hidden = false;
+  showQuestion();
+};
+
+function showQuestion() {
+  const item = QUESTIONS[index];
+  $("progress").textContent = `第 ${index + 1} / ${QUESTIONS.length} 題`;
+  $("bar").style.width = (index / QUESTIONS.length * 100) + "%";
+  $("question").textContent = item.q;
+  $("options").innerHTML = "";
+  item.options.forEach((text, i) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.onclick = () => choose(i, b);
+    $("options").appendChild(b);
+  });
+}
+
+function choose(i, btn) {
+  const item = QUESTIONS[index];
+  document.querySelectorAll("#options button").forEach(b => b.disabled = true);
+  if (i === item.answer) { correct++; btn.classList.add("right"); }
+  else { btn.classList.add("wrong"); $("options").children[item.answer].classList.add("right"); }
+  setTimeout(() => {
+    index++;
+    if (index < QUESTIONS.length) showQuestion(); else finish();
+  }, 900);
+}
+
+function finish() {
+  $("page-quiz").hidden = true;
+  $("page-result").hidden = false;
+  const score = Math.round(correct / QUESTIONS.length * 100);
+  $("score").textContent = score + " 分";
+  if (!SHEET_URL) { $("send-status").textContent = "（還沒連接資料庫，成績只顯示在這裡）"; return; }
+  // 把成績送到 Google 試算表（第 3 章設定）
+  fetch(SHEET_URL, { method: "POST", body: JSON.stringify({ seat, score, correct, total: QUESTIONS.length }) })
+    .then(() => $("send-status").textContent = "✅ 成績已送出，老師看得到了！")
+    .catch(() => $("send-status").textContent = "⚠️ 送出失敗，請告訴老師");
+}
+</script>
+</body>
+</html>
